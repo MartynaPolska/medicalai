@@ -462,10 +462,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text'
   </div><!-- /phone -->
 </div>
 
+To make this as easy as possible, I have integrated the **telemetry tracking** and the **Qualtrics communication layer** into your existing script.
+
+**Instructions:**
+
+1. Open your `index.html` on GitHub.
+2. Select everything between `<script>` and `</script>` and delete it.
+3. Paste the code below in its place.
+4. Save (Commit) the changes.
+
+```javascript
 <script>
 var history_stack = [];
 var cur = 0;
 var selectedDisease = 0;
+
+// --- TELEMETRY DATA STORAGE ---
+var telemetry = {
+  totalClicks: 0,
+  screenTimes: {},
+  lastScreenTime: Date.now(),
+  selections: {
+    disease: "",
+    symptoms: [],
+    familyHistory: []
+  },
+  completed: false
+};
+
+// Global click listener for interaction report
+document.addEventListener('click', function() {
+  telemetry.totalClicks++;
+});
 
 var diseaseSymptoms = [
   ['Runny nose','Nasal congestion','Body aches','Chills','Loss of appetite','Night sweats','Sneezing','Sore throat','Ear pain'],
@@ -523,6 +551,12 @@ function updateClock(){
 updateClock();setInterval(updateClock,15000);
 
 function goTo(n){
+  // LOG TIME DATA
+  var now = Date.now();
+  var secondsSpent = ((now - telemetry.lastScreenTime) / 1000).toFixed(2);
+  telemetry.screenTimes['Screen_' + cur] = secondsSpent;
+  telemetry.lastScreenTime = now;
+
   var old = document.getElementById('sc'+cur);
   var next = document.getElementById('sc'+n);
   history_stack.push(cur);
@@ -531,8 +565,14 @@ function goTo(n){
   next.classList.remove('hidden-right','hidden-left');
   next.classList.add('active');
   cur = n;
+  
   if(n===4) populateSymptoms();
   if(n===9){
+    // PROTOCOL COMPLETE: Send data to Qualtrics
+    telemetry.completed = true;
+    telemetry.selections.disease = diseaseNames[selectedDisease];
+    window.parent.postMessage(telemetry, "*"); 
+
     document.getElementById('report-id').textContent='HA-'+new Date().getFullYear()+'-'+Math.floor(1000+Math.random()*9000);
     document.getElementById('report-date').textContent=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
   }
@@ -562,10 +602,26 @@ function selectSingle(el, group){
   var parent = el.parentElement;
   parent.querySelectorAll('.option-card').forEach(function(c){ c.classList.remove('selected'); });
   el.classList.add('selected');
+  
+  // Track specific single selections (like Age/Sex) if needed
+  var val = el.innerText.trim();
+  if(cur === 1) telemetry.selections.sex = val;
 }
 
 function toggleChip(el){
   el.classList.toggle('sel');
+  var val = el.innerText.replace('✓', '').trim();
+  
+  // Track selections for Family History (Screen 2) or Symptoms (Screen 4)
+  if (cur === 2) { 
+    var idx = telemetry.selections.familyHistory.indexOf(val);
+    if (idx > -1) telemetry.selections.familyHistory.splice(idx, 1);
+    else telemetry.selections.familyHistory.push(val);
+  } else if (cur === 4) { 
+    var idx = telemetry.selections.symptoms.indexOf(val);
+    if (idx > -1) telemetry.selections.symptoms.splice(idx, 1);
+    else telemetry.selections.symptoms.push(val);
+  }
 }
 
 function populateSymptoms(){
@@ -721,10 +777,18 @@ function restart(){
   cur = 0;
   history_stack = [];
   selectedDisease = 0;
+  
+  // Reset Telemetry
+  telemetry.totalClicks = 0;
+  telemetry.screenTimes = {};
+  telemetry.selections = { disease: "", symptoms: [], familyHistory: [] };
+  
   document.querySelectorAll('.option-card').forEach(function(c){ c.classList.remove('selected'); });
   document.querySelectorAll('.chip').forEach(function(c){ c.classList.remove('sel'); });
   document.getElementById('btn1').disabled = true;
 }
 </script>
+
+```
 </body>
 </html>
